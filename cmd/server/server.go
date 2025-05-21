@@ -19,6 +19,8 @@ func main() {
 		cancel()
 	}()
 
+	log.SetFlags(log.Lmicroseconds)
+
 	server := NewServer(ctx, 7223)
 	if err := server.Run(); err != nil {
 		log.Println(err)

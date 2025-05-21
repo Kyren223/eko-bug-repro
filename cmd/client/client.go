@@ -11,6 +11,8 @@ import (
 func main() {
 	_, priv, _ := ed25519.GenerateKey(nil)
 
+	log.SetFlags(log.Lmicroseconds)
+
 	c := Connect(priv, time.Second)
 	log.Println(c)
 

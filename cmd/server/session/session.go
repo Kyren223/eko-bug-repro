@@ -99,23 +99,26 @@ func (s *Session) Read(ctx context.Context) (packet.Packet, bool) {
 }
 
 func (s *Session) Close() {
-	timeout := 10 * time.Millisecond
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	// Create a context with timeout for the close operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Send close notification
 	payload := &packet.Error{
 		Error:   "new connection from another location, closing this one",
 		PktType: packet.PacketError,
 	}
 	pkt := packet.NewPacket(packet.NewJsonEncoder(payload))
-	s.Write(ctx, pkt)
-	cancel()
 
-	// Add some delay before canceling to let the writer enough time to
-	// actually write that into the connection
-	// HACK: consider just giving session the private connection and to
-	// write directly so we don't have to wait
-	time.Sleep(100 * time.Millisecond)
+	// Try to send the close notification
+	select {
+	case s.writeQueue <- pkt:
+		// Give a small grace period for the write to be processed
+		time.Sleep(100 * time.Millisecond)
+	case <-ctx.Done():
+		log.Println(s.addr, "timeout sending close notification")
+	}
 
 	log.Println(s.addr, "closed due to new connection from another location")
-
 	s.cancel()
 }

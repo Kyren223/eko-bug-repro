@@ -186,11 +186,28 @@ func (server *server) handleConnection(conn net.Conn) {
 
 	initialCancel()
 
+	// Create a channel to signal when all writes are complete
+	writeDone := make(chan struct{})
+
 	go func() {
 		<-ctx.Done()
+		// Set a deadline for the close operation
+		deadline := time.Now().Add(5 * time.Second)
+		if err := conn.SetDeadline(deadline); err != nil {
+			log.Println(addr, "error setting close deadline:", err)
+		}
 		_ = conn.Close()
+		close(writeDone)
 	}()
+
 	defer func() {
+		// Wait for writes to complete before closing
+		select {
+		case <-writeDone:
+		case <-time.After(5 * time.Second):
+			log.Println(addr, "timeout waiting for writes to complete")
+		}
+
 		_ = conn.Close()
 		sameAddress := addr.String() == server.Session(sess.ID()).Addr().String()
 		if sameAddress {
@@ -206,10 +223,24 @@ func (server *server) handleConnection(conn net.Conn) {
 				return
 			}
 			log.Println(addr, "sending packet:", packet)
+
+			// Set write deadline
+			deadline := time.Now().Add(5 * time.Second)
+			if err := conn.SetWriteDeadline(deadline); err != nil {
+				log.Println(addr, "error setting write deadline:", err)
+				return
+			}
+
 			if _, err := packet.Into(conn); err != nil {
 				if !errors.Is(err, net.ErrClosed) {
 					log.Println(addr, err)
 				}
+				return
+			}
+
+			// Reset write deadline
+			if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+				log.Println(addr, "error resetting write deadline:", err)
 				return
 			}
 		}

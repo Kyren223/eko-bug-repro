@@ -10,6 +10,7 @@ import (
 	"eko-bug-repro/pkg/snowflake"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -186,13 +187,26 @@ func handlePacketStream() {
 }
 
 func Disconnect() {
-	if conn != nil {
-		closed = true
-		_ = conn.Close()
-		log.Println("Disconnected")
-	} else {
+	if conn == nil {
 		log.Println("Can't disconnect: not connected")
+		return
 	}
+
+	// Set a deadline for the close operation
+	deadline := time.Now().Add(5 * time.Second)
+	if err := conn.SetDeadline(deadline); err != nil {
+		log.Println("Error setting deadline:", err)
+	}
+
+	// Mark as closed first to prevent new writes
+	closed = true
+
+	// Close the connection
+	if err := conn.Close(); err != nil {
+		log.Println("Error closing connection:", err)
+	}
+
+	log.Println("Disconnected")
 }
 
 func onDisconnect(err error) {
@@ -251,7 +265,22 @@ func send(request packet.Payload) error {
 		writeMu.Unlock()
 		return errors.New("connection is closed")
 	}
+
+	// Set a write deadline
+	deadline := time.Now().Add(5 * time.Second)
+	if err := conn.SetWriteDeadline(deadline); err != nil {
+		writeMu.Unlock()
+		return fmt.Errorf("error setting write deadline: %w", err)
+	}
+
 	_, err := pkt.Into(conn)
+
+	// Reset the write deadline
+	if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+		writeMu.Unlock()
+		return fmt.Errorf("error resetting write deadline: %w", err)
+	}
+
 	writeMu.Unlock()
 
 	if err != nil {

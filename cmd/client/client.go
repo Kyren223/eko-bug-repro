@@ -36,24 +36,24 @@ func sendFinalData() {
 	ch1 := SendAsync(Payload("ONE"))
 	ch2 := SendAsync(Payload("TWO"))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	select {
-	case <-ctx.Done():
-		log.Println("CTX1 DONE")
-	case <-ch1:
-		log.Println("CH1 DONE")
-	}
+	// Wait for both writes to complete or timeout
+	done := make(chan struct{})
+	go func() {
+		<-ch1
+		<-ch2
+		close(done)
+	}()
 
 	select {
 	case <-ctx.Done():
-		log.Println("CTX2 DONE")
-	case <-ch2:
-		log.Println("CH2 DONE")
+		log.Println("Timeout waiting for writes to complete")
+	case <-done:
+		log.Println("All writes completed successfully")
 	}
 
-	// log.Println("BLOCKING...")
-	// <-ctx.Done()
-	// log.Println("CTX DANZO")
+	// Give a small grace period for the writes to be processed
+	time.Sleep(100 * time.Millisecond)
 }
